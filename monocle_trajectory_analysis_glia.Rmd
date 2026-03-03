@@ -1,0 +1,551 @@
+---
+title: "Octopus_trajectory_analysis"
+author: "Enora Geslain"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Set the environment and load needed packages
+
+```{r setup, echo=FALSE}
+setwd("C:/Users/enora/Documents/work/octopus_SC_Monocle")
+library(monocle3) # v. 1.4.25
+library(Seurat) # v. 5.3.0
+library(SeuratWrappers) # v. 0.4.0
+library(anndata) # v. 0.8.0
+library(ggplot2) # v. 3.5.2
+library(dplyr) # v. 1.1.4
+library(tidyverse) # v. 2.0.0
+library(clustree) # v. 0.5.1
+library(cluster) # v. 2.1.8.1
+library(magrittr) # v. 2.0.3
+library(patchwork) # v. 1.3.0
+```
+
+# Loading raw feature matrices of each batch of the 3 stages and subset them to the cells of the Scanpy UMAP
+
+```{r load_datasets, echo=FALSE}
+## Load stage IX batch 1
+octo_stage_IX_1 <- Read10X(data.dir = "raw_feature_bc_matrix_stageIX-1")
+## Create the Seurat object
+octo_stage_IX_1 <- CreateSeuratObject(counts = octo_stage_IX_1[["Gene Expression"]], project = "stage_IX_1")
+## Create vector containing cells from Scanpy UMAP
+cells_IX_1 <- readLines("cells_IX_1.txt")
+## Subset the Seurat object
+octo_stage_IX_1_subset <- subset(octo_stage_IX_1, cells = cells_IX_1)
+## Remove old Seurat object
+remove(octo_stage_IX_1)
+
+## Same for stage IX batch 2
+octo_stage_IX_2 <- Read10X(data.dir = "raw_feature_bc_matrix_stageIX-2")
+octo_stage_IX_2 <- CreateSeuratObject(counts = octo_stage_IX_2[["Gene Expression"]], project = "stage_IX_2")
+cells_IX_2 <- readLines("cells_IX_2.txt")
+octo_stage_IX_2_subset <- subset(octo_stage_IX_2, cells = cells_IX_2)
+remove(octo_stage_IX_2)
+
+## Same for stage IX batch 3
+octo_stage_IX_3 <- Read10X(data.dir = "raw_feature_bc_matrix_stageIX-3")
+octo_stage_IX_3 <- CreateSeuratObject(counts = octo_stage_IX_3, project = "stage_IX_3")
+cells_IX_3 <- readLines("cells_IX_3.txt")
+octo_stage_IX_3_subset <- subset(octo_stage_IX_3, cells = cells_IX_3)
+remove(octo_stage_IX_3)
+
+## Same for stage XII batch 1
+octo_stage_XII_1 <- Read10X(data.dir = "raw_feature_bc_matrix_stageXII-1")
+octo_stage_XII_1 <- CreateSeuratObject(counts = octo_stage_XII_1[["Gene Expression"]], project = "stage_XII_1")
+cells_XII_1 <- readLines("cells_XII_1.txt")
+octo_stage_XII_1_subset <- subset(octo_stage_XII_1, cells = cells_XII_1)
+remove(octo_stage_XII_1)
+
+## Same for stage XII batch 2
+octo_stage_XII_2 <- Read10X(data.dir = "raw_feature_bc_matrix_stageXII-2")
+octo_stage_XII_2 <- CreateSeuratObject(counts = octo_stage_XII_2[["Gene Expression"]], project = "stage_XII_2")
+cells_XII_2 <- readLines("cells_XII_2.txt")
+octo_stage_XII_2_subset <- subset(octo_stage_XII_2, cells = cells_XII_2)
+remove(octo_stage_XII_2)
+
+## Same for stage XII batch 3
+octo_stage_XII_3 <- Read10X(data.dir = "raw_feature_bc_matrix_stageXII-3")
+octo_stage_XII_3 <- CreateSeuratObject(counts = octo_stage_XII_3[["Gene Expression"]], project = "stage_XII_3")
+cells_XII_3 <- readLines("cells_XII_3.txt")
+octo_stage_XII_3_subset <- subset(octo_stage_XII_3, cells = cells_XII_3)
+remove(octo_stage_XII_3)
+
+## Same for stage XV batch 1
+octo_stage_XV_1 <- Read10X(data.dir = "raw_feature_bc_matrix_stageXV-1")
+octo_stage_XV_1 <- CreateSeuratObject(counts = octo_stage_XV_1, project = "stage_XV_1")
+cells_XV_1 <- readLines("cells_XV_1.txt")
+octo_stage_XV_1_subset <- subset(octo_stage_XV_1, cells = cells_XV_1)
+remove(octo_stage_XV_1)
+
+## Same for stage XV batch 2
+octo_stage_XV_2 <- Read10X(data.dir = "raw_feature_bc_matrix_stageXV-2")
+octo_stage_XV_2 <- CreateSeuratObject(counts = octo_stage_XV_2, project = "stage_XV_2")
+cells_XV_2 <- readLines("cells_XV_2.txt")
+octo_stage_XV_2_subset <- subset(octo_stage_XV_2, cells = cells_XV_2)
+remove(octo_stage_XV_2)
+
+## Clean environment
+gc()
+```
+
+# Normalize the datasets
+
+```{r normalize, echo=FALSE}
+octo_stage_IX_1_subset <- NormalizeData(octo_stage_IX_1_subset, scale.factor = 1000000)
+octo_stage_IX_2_subset <- NormalizeData(octo_stage_IX_2_subset, scale.factor = 1000000)
+octo_stage_IX_3_subset <- NormalizeData(octo_stage_IX_3_subset, scale.factor = 1000000)
+octo_stage_XII_1_subset <- NormalizeData(octo_stage_XII_1_subset, scale.factor = 1000000)
+octo_stage_XII_2_subset <- NormalizeData(octo_stage_XII_2_subset, scale.factor = 1000000)
+octo_stage_XII_3_subset <- NormalizeData(octo_stage_XII_3_subset, scale.factor = 1000000)
+octo_stage_XV_1_subset <- NormalizeData(octo_stage_XV_1_subset, scale.factor = 1000000)
+octo_stage_XV_2_subset <- NormalizeData(octo_stage_XV_2_subset, scale.factor = 1000000)
+```
+
+# Find the 2000 most variable features
+
+```{r highly_variable, echo=FALSE}
+octo_stage_IX_1_subset <- FindVariableFeatures(octo_stage_IX_1_subset, selection.method = "vst", nfeatures = 5000)
+octo_stage_IX_2_subset <- FindVariableFeatures(octo_stage_IX_2_subset, selection.method = "vst", nfeatures = 5000)
+octo_stage_IX_3_subset <- FindVariableFeatures(octo_stage_IX_3_subset, selection.method = "vst", nfeatures = 5000)
+octo_stage_XII_1_subset <- FindVariableFeatures(octo_stage_XII_1_subset, selection.method = "vst", nfeatures = 5000)
+octo_stage_XII_2_subset <- FindVariableFeatures(octo_stage_XII_2_subset, selection.method = "vst", nfeatures = 5000)
+octo_stage_XII_3_subset <- FindVariableFeatures(octo_stage_XII_3_subset, selection.method = "vst", nfeatures = 5000)
+octo_stage_XV_1_subset <- FindVariableFeatures(octo_stage_XV_1_subset, selection.method = "vst", nfeatures = 5000)
+octo_stage_XV_2_subset <- FindVariableFeatures(octo_stage_XV_2_subset, selection.method = "vst", nfeatures = 5000)
+```
+
+# Integrate the data into one global Seurat object
+
+```{r integrate, echo=FALSE}
+## First rename the cell barcodes to make them correspond with the names in annotation file of Scanpy
+octo_stage_IX_1_subset <- RenameCells(octo_stage_IX_1_subset, add.cell.id = "IX_1")
+octo_stage_IX_2_subset <- RenameCells(octo_stage_IX_2_subset, add.cell.id = "IX_2")
+octo_stage_IX_3_subset <- RenameCells(octo_stage_IX_3_subset, add.cell.id = "IX_3")
+octo_stage_XII_1_subset <- RenameCells(octo_stage_XII_1_subset, add.cell.id = "XII_1")
+octo_stage_XII_2_subset <- RenameCells(octo_stage_XII_2_subset, add.cell.id = "XII_2")
+octo_stage_XII_3_subset <- RenameCells(octo_stage_XII_3_subset, add.cell.id = "XII_3")
+octo_stage_XV_1_subset <- RenameCells(octo_stage_XV_1_subset, add.cell.id = "XV_1")
+octo_stage_XV_2_subset <- RenameCells(octo_stage_XV_2_subset, add.cell.id = "XV_2")
+
+## Create a list with all dataset names
+sample.list <- list(octo_stage_IX_1_subset, octo_stage_IX_2_subset, octo_stage_IX_3_subset,
+                    octo_stage_XII_1_subset, octo_stage_XII_2_subset, octo_stage_XII_3_subset,
+                    octo_stage_XV_1_subset, octo_stage_XV_2_subset)
+
+## Detect features for integration
+features <- SelectIntegrationFeatures(object.list = sample.list)
+
+## Find anchors for the integration
+condition.anchors <- FindIntegrationAnchors(object.list = sample.list, anchor.features = features)
+
+## Create the integrated dataset
+octo_all_stages_integrated <- IntegrateData(anchorset = condition.anchors)
+```
+
+# Run a basic analysis on the integrated Seurat object
+
+```{r basic_seurat, echo=FALSE}
+## Set default assay to the integrated one
+DefaultAssay(octo_all_stages_integrated) <- "integrated"
+
+## Run the standard workflow for PCA clustering
+octo_all_stages_integrated <- ScaleData(octo_all_stages_integrated, verbose = FALSE)
+octo_all_stages_integrated <- RunPCA(octo_all_stages_integrated, npcs = 50, verbose = FALSE)
+
+## Visualize PCA results
+DimPlot(octo_all_stages_integrated, reduction = "pca", label = T)
+```
+
+# Transfer the Scanpy annotation to the Seurat object
+
+```{r transfer_annotation, echo=FALSE}
+## Load barcodes from Scanpy
+cell_metadata <- read.csv("all_stages_corrected_anno.csv")
+cell_metadata$stage <- sub("_.*", "", cell_metadata$batch)
+print(head(cell_metadata))
+barcodes <- cell_metadata$barcode
+
+## Add annotation of Scanpy to integrated dataset
+target <- as.vector(octo_all_stages_integrated@assays[["integrated"]]@data@Dimnames[[2]])
+cell_metadata_reversed <- as.data.frame(t(cell_metadata))
+barcodes <- cell_metadata_reversed[1,]
+colnames(cell_metadata_reversed) <- c(cell_metadata_reversed[1,])
+t <- select(cell_metadata_reversed, which(names(cell_metadata_reversed) %in% target))
+cell_metadata_rearranged <- as.data.frame(t(t)) %>%
+  arrange(factor(barcode, levels = c(octo_all_stages_integrated@assays[["integrated"]]@data@Dimnames[[2]])))
+octo_all_stages_integrated[['Scanpy_annot']] <-cell_metadata_rearranged$anno[match(rownames(octo_all_stages_integrated@meta.data), cell_metadata_rearranged$barcode)]
+
+## Add embryonic stage information in metadata of Seurat object
+octo_all_stages_integrated[['Stage']] <-cell_metadata_rearranged$stage[match(rownames(octo_all_stages_integrated@meta.data), cell_metadata_rearranged$barcode)]
+```
+
+# Run UMAP clustering of Seurat
+
+```{r umap_seurat, echo=FALSE}
+## Look at the Elbow plot to determine best number of dimensions
+ElbowPlot(octo_all_stages_integrated, ndims = 50)
+
+## Search best resolution using clustree
+octo_all_stages_integrated <- FindNeighbors(octo_all_stages_integrated, dims = 1:50, reduction = "pca")
+octo_all_stages_integrated <- FindClusters(octo_all_stages_integrated, resolution = c(0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1, 1.1, 1.2, 1.3, 1.4, 1.5))
+clustree(octo_all_stages_integrated)
+
+## Set best resolution as default for the Seurat object
+octo_all_stages_integrated <- FindClusters(octo_all_stages_integrated, resolution = 0.7)
+
+## Run the UMAP clustering
+octo_all_stages_integrated <- RunUMAP(octo_all_stages_integrated, dims = 1:35, reduction = "pca", reduction.name = "umap.integrated")
+
+## Visualize clustering with both Sanpy annotations and Stages
+DimPlot(octo_all_stages_integrated, reduction = "umap.integrated", group.by = c("Scanpy_annot"), label=TRUE)
+DimPlot(octo_all_stages_integrated, reduction = "umap.integrated", group.by = c("Stage"), label=TRUE)
+
+## Save the Seurat object as a RDS object
+saveRDS(octo_all_stages_integrated, file = "octo_all_stages_integrated.rds")
+```
+
+# Downsample GLIA cells
+
+```{r downsample_GLIA, echo=FALSE}
+## Load saved Seurat object
+octo_all_stages_integrated <- readRDS("octo_all_stages_integrated.rds")
+
+## Subselect the cells annotated as GLIA in Scanpy annotation
+octo_glia <- subset(octo_all_stages_integrated, subset = Scanpy_annot == "GLIA")
+
+## Visualize the GLIA cells
+DimPlot(octo_glia, reduction = "umap.integrated", group.by = c("Scanpy_annot"), label=TRUE)
+
+## Run Seurat UMAP clustering on these cells
+octo_glia <- ScaleData(octo_glia, verbose = FALSE)
+octo_glia <- RunPCA(octo_glia, npcs = 50, verbose = FALSE)
+ElbowPlot(octo_glia, ndims = 50)
+octo_glia <- FindNeighbors(octo_glia, dims = 1:35, reduction = "pca")
+octo_glia <- FindClusters(octo_glia, resolution = c(0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1, 1.1, 1.2, 1.3, 1.4, 1.5))
+clustree(octo_glia)
+octo_glia <- FindClusters(octo_glia, resolution = 0.8)
+octo_glia <- RunUMAP(octo_glia, dims = 1:35, reduction = "pca", reduction.name = "umap.integrated")
+
+## Visualize clustering of the GLIA cells with both Sanpy annotations and Stages
+DimPlot(octo_glia, reduction = "umap.integrated", group.by = c("Scanpy_annot"), label=TRUE)
+DimPlot(octo_glia, reduction = "umap.integrated", group.by = c("Stage"), label=TRUE)
+
+## Save this new Seurat object as a RDS object
+saveRDS(octo_glia, file = "octo_glia.rds")
+```
+
+# Convert GLIA Seurat object to Cell Data Set (CDS) object for Monocle
+
+```{r conversion, echo=FALSE, fig.height=7, fig.width=10}
+## Load GLIA seurat object
+octo_glia <- readRDS("octo_glia.rds")
+
+## Set default assay to RNA and join the different layers for the conversion
+DefaultAssay(octo_glia) <- "RNA"
+octo_glia <- JoinLayers(octo_glia)
+
+## Convert the Seurat object to a CDS object
+octo_glia_CDS <- as.cell_data_set(octo_glia)
+
+## Add important information that was not transferred
+rowData(octo_glia_CDS)$gene_short_name <- rownames(octo_glia_CDS)
+octo_glia_CDS <- estimate_size_factors(octo_glia_CDS)
+
+## Preprocess and do first tSNE clustering with Monocle
+octo_glia_CDS <- preprocess_cds(octo_glia_CDS, num_dim = 60)
+plot_pc_variance_explained(octo_glia_CDS)
+octo_glia_CDS <- reduce_dimension(octo_glia_CDS, reduction_method = "tSNE")
+
+## Visualize this new clustering with the 3 embryonic stages
+plot_cells(octo_glia_CDS, reduction_method="tSNE", color_cells_by = "Stage")
+```
+
+# Remove the batch effect from the CDS object
+
+```{r remove_batch_effect, echo=FALSE, fig.height=7, fig.width=10}
+## Visualize this new clustering with the different batches
+plot_cells(octo_glia_CDS, reduction_method = "tSNE", color_cells_by = "orig.ident", label_cell_groups = FALSE)
+
+## Remove the batch effect
+octo_glia_CDS <- align_cds(octo_glia_CDS, num_dim = 60, alignment_group = "orig.ident")
+
+## Run a new clustering on the corrected dataset
+octo_glia_CDS <- reduce_dimension(octo_glia_CDS, reduction_method = "tSNE")
+reducedDims(octo_glia_CDS)$UMAP <- reducedDims(octo_glia_CDS)$tSNE
+
+## Visualize this new clustering with the different batches and the Stages to see if the batch correction worked
+plot_cells(octo_glia_CDS, reduction_method="UMAP", color_cells_by = "orig.ident", label_cell_groups = FALSE)
+plot_cells(octo_glia_CDS, reduction_method="UMAP", color_cells_by = "Stage", label_cell_groups = FALSE)
+```
+
+# Improve the clustering by optimizing the resolution
+
+```{r improve_clustering, echo=FALSE, fig.height=8, fig.width=10}
+## Searched best clustering resolution using silhouette scores
+### Create a dataframe of the different resolutions to try
+resolutions <- c(1e-3, 1.5e-3, 2e-3, 2.5e-3, 3e-3, 3.5e-3, 4e-3, 4.5e-3, 5e-3, 5.5e-3, 6e-3, 6.5e-3, 7e-3, 7.5e-3, 8e-3, 8.5e-3, 9e-3, 9.5e-3, 1e-2)
+silhouette_scores <- data.frame(res = numeric(), mean_silhouette = numeric())
+
+### Create a matrix containing the UMAP coordinates
+umap_coords <- reducedDims(octo_glia_CDS)[["UMAP"]]
+dist_matrix <- dist(umap_coords)
+
+### Loop through the different resolutions to calculate the silhouette scores
+for (res in resolutions) {
+  octo_glia_CDS <- cluster_cells(octo_glia_CDS, resolution = res)
+  curr_clusters <- as.numeric(clusters(octo_glia_CDS))
+  if (length(unique(curr_clusters)) > 1) {
+    sil <- silhouette(curr_clusters, dist_matrix)
+    mean_sil <- mean(sil[, 3])
+    silhouette_scores <- rbind(silhouette_scores, data.frame(res = res, mean_silhouette = mean_sil))
+  }
+}
+
+### Visualize the silhouette scores
+ggplot(silhouette_scores, aes(x = as.factor(res), y = mean_silhouette, group = 1)) +
+  geom_line(color = "steelblue") +
+  geom_point(size = 3) +
+  theme_minimal() +
+  labs(title = "Silhouette Analysis by Resolution",
+       x = "Resolution (Log)", y = "Average Silhouette score")
+
+## Searched best clustering resolution using clustree
+### Run clustering at multiple resolutions
+res_range <- seq(1e-3, 9.5e-3, length.out = 18)
+octo_glia_CDS_list <- lapply(res_range, function(r) {
+    cluster_cells(octo_glia_CDS, resolution = r)
+})
+
+### Extract cluster assignments into a data frame
+cluster_matrix <- sapply(octo_glia_CDS_list, function(x) clusters(x))
+colnames(cluster_matrix) <- paste0("res_", res_range)
+
+### Run clustree and visualize the 
+clustree(cluster_matrix, prefix = "res_")
+
+# Cluster the cells with the best resolution from the 2 methods 
+octo_glia_CDS <- cluster_cells(octo_glia_CDS, reduction_method="UMAP", resolution=7e-3)
+```
+
+# Calculate trajectories of this clustering and visualize them
+
+```{r calculate_trajectory, echo=FALSE, fig.height=7, fig.width=10}
+## Calculate trajectories
+octo_glia_CDS <- learn_graph(octo_glia_CDS)
+
+## Visualize the trajectories
+plot_cells(octo_glia_CDS, label_cell_groups = FALSE)
+```
+
+# Create a pdf file of the trajectory plot
+
+```{r trajectory_pdf, echo=FALSE, fig.height=7, fig.width=10}
+## Set colors of the groups
+my_stage_colors <- c(
+  "IX" = "#CC5500",
+  "XII" = "#6082B6",
+  "XV" = "#8A9A5B"
+)
+
+## Create the plot
+p <- plot_cells(octo_glia_CDS, color_cells_by = "Stage", label_cell_groups = FALSE, cell_size = 1) +
+  scale_color_manual(values = my_stage_colors)
+p$layers[[1]]$aes_params$stroke <- 0
+p$layers[[1]]$aes_params$colour <- NA
+p1 <- p + scale_color_manual(values = my_stage_colors)
+
+## Save it as a pdf
+ggsave(filename = "Trajectory_plot_GLIA.pdf", 
+       plot = p1, 
+       device = "pdf", 
+       width = 10,
+       height = 8,
+       useDingbats = FALSE)
+```
+
+# Define the root node of the trajectory and visualize the result
+
+```{r root_node, echo=FALSE}
+## Set the function to define automatically the best root node based on the embryonic stage
+get_earliest_principal_node <- function(cds, time_bin="IX"){
+  cell_ids <- which(colData(cds)[, "Stage"] == time_bin)
+  
+  closest_vertex <-
+  cds@principal_graph_aux[["UMAP"]]$pr_graph_cell_proj_closest_vertex
+  closest_vertex <- as.matrix(closest_vertex[colnames(cds), ])
+  root_pr_nodes <-
+  igraph::V(principal_graph(cds)[["UMAP"]])$name[as.numeric(names
+  (which.max(table(closest_vertex[cell_ids,]))))]
+  
+  root_pr_nodes
+}
+
+## Set the root node
+octo_glia_CDS <- order_cells(octo_glia_CDS, root_pr_nodes=get_earliest_principal_node(octo_glia_CDS))
+
+## Save the CDS object as a RDS file
+saveRDS(octo_glia_CDS, file = "octo_glia_CDS.rds")
+```
+
+# Create a pdf file of the pseudotime plot
+
+```{r pseudotime_pdf, echo=FALSE}
+## Create the plot
+p <- plot_cells(octo_glia_CDS,
+           color_cells_by = "pseudotime",
+           label_cell_groups=FALSE,
+           label_leaves=TRUE,
+           label_branch_points=TRUE,
+           graph_label_size=1.5,
+           cell_size = 1)
+p$layers[[1]]$aes_params$stroke <- 0
+p$layers[[1]]$aes_params$colour <- NA
+
+## Save it as a pdf
+ggsave(filename = "Trajectory_with_pseudotime_GLIA.pdf", 
+       plot = p, 
+       device = "pdf", 
+       width = 10,
+       height = 8,
+       useDingbats = FALSE)
+```
+
+# Highlighting cells of each pattern from the NMF in the trajectory plot
+
+```{r highlight_cells_pattern, echo=FALSE, fig.width=16, fig.height=12}
+## Read table file containing enrichment values for the different patterns for all the cell barcodes
+barcodes_pattern <- read.csv("patterns_barcodes_for_monocle.csv")
+
+## Reformat cell barcodes names
+barcodes_pattern$barcode <- sub("^(.*)(-1-)(.*)$", "\\3_\\1-1", barcodes_pattern$barcode)
+
+## Define function to rescale the enrichment values to percentage of enrichment
+rescale_percent <- function(x) {
+  (x - min(x, na.rm = TRUE)) / (max(x, na.rm = TRUE) - min(x, na.rm = TRUE))
+}
+
+## Create a list to store the plots of each pattern
+plot_list_percent <- list()
+
+## Define the function to create the plot for each pattern
+for(p_col in paste0("P_", 1:9)) {
+  
+  ### Create a vector of scores
+  all_cells <- colnames(octo_glia_CDS)
+  scores <- setNames(rep(min(barcodes_pattern[[p_col]]), length(all_cells)), all_cells)
+  present_barcodes <- intersect(barcodes_pattern$barcode, all_cells)
+  scores[present_barcodes] <- barcodes_pattern[[p_col]][match(present_barcodes, barcodes_pattern$barcode)]
+  
+  ### Convert to percentages
+  scores_percent <- rescale_percent(scores)
+  
+  ### Add the scores to the CDS object
+  colData(octo_glia_CDS)[[p_col]] <- scores_percent
+  
+  ### Generate the plot
+  p <- plot_cells(octo_glia_CDS,
+                  color_cells_by = p_col,
+                  show_trajectory_graph = TRUE,
+                  label_cell_groups = FALSE,
+                  label_leaves = FALSE,
+                  cell_size = 0.8,
+                  cell_stroke = 0) +
+       scale_color_gradientn(colors = c("lightgrey", "yellow", "red"), 
+                             labels = scales::percent,
+                             name = "Intensity") +
+       ggtitle(paste("Gradient of expression :", p_col)) +
+    guides(color = guide_colorbar(order = 1)) +
+    theme(panel.background = element_blank())
+  p$layers[[1]]$aes_params$stroke <- 0
+  p$layers[[1]]$aes_params$colour <- NA
+  
+  plot_list_percent[[p_col]] <- p
+}
+```
+
+# Create patchwork plot highlighting the cells enriched for each NMF pattern and save it as a pdf
+
+```{r plot_highlighted_cells_pattern, echo=FALSE, fig.width=16, fig.height=12}
+wrap_plots(plot_list_percent, ncol = 3)
+p <- wrap_plots(plot_list_percent, ncol = 3)
+ggsave(filename = "Trajectory_gradient_pattern_GLIA.pdf", 
+       plot = p, 
+       device = "pdf", 
+       width = 16,
+       height = 12,
+       useDingbats = FALSE)
+```
+
+# Plot Pseudotimes against patterns to see if they correlate with the results of the NMF analysis
+
+```{r pseudotime_vs_patterns, echo=FALSE, fig.width=10, fig.height=6}
+## Retrieve separated scores of each pattern from table file of previous step
+pattern_cols <- grep("^P_", colnames(barcodes_pattern), value = TRUE)
+scores <- barcodes_pattern[, pattern_cols]
+
+## Scaling to turn all values to scores between 0 and 1
+scores_pos <- apply(scores, 2, function(x) (x - min(x, na.rm = TRUE)) / (max(x, na.rm = TRUE) - min(x, na.rm = TRUE)))
+
+## Conversion to percentages
+df_pct <- as.data.frame(t(apply(scores_pos, 1, function(x) x / sum(x))))
+
+## Re-integration of the cell barcodes
+df_pct$barcode <- barcodes_pattern$barcode
+pseudo_df <- data.frame(
+  barcode = row.names(colData(octo_glia_CDS)),
+  pseudotime = pseudotime(octo_glia_CDS)
+)
+
+## Fusion of percentages and pseudotimes
+final_df <- merge(df_pct, pseudo_df, by = "barcode")
+
+## Create a summary table of this fusion
+summary_patterns <- final_df %>%
+  ## Convert to long format
+  pivot_longer(cols = starts_with("P_"), names_to = "Pattern", values_to = "Enrichment") %>%
+  ## Cleaning: removing NAs and infinite pseudotimes
+  filter(!is.na(pseudotime), !is.na(Enrichment), is.finite(pseudotime)) %>%
+  group_by(Pattern) %>%
+  summarise(
+    mean_pseudo = sum(pseudotime * Enrichment, na.rm = TRUE) / sum(Enrichment, na.rm = TRUE),
+    sd_pseudo = sd(pseudotime, na.rm = TRUE),
+    .groups = 'drop'
+  ) %>%
+  ## Sorting by pattern (P_1, P_2, etc.)
+  mutate(Pattern = factor(Pattern, levels = paste0("P_", 1:9))) %>%
+  arrange(Pattern)
+
+## Check result
+print(summary_patterns)
+
+## Visualize the result as a curve
+ggplot(summary_patterns, aes(x = Pattern, y = mean_pseudo, group = 1)) +
+  geom_line(color = "steelblue", size = 1) +
+  geom_point(color = "darkblue", size = 3) +
+  theme_minimal() +
+  theme(axis.title.y = element_text(size = 18, face = "bold", margin = margin(r = 10)),
+        axis.text.x = element_text(size = 14),
+        axis.text.y = element_text(size = 14)) + 
+  labs(title = "", x = "", y = "Average pseudotime")
+
+## Save the plot as a pdf
+p <- ggplot(summary_patterns, aes(x = Pattern, y = mean_pseudo, group = 1)) +
+  geom_line(color = "steelblue", size = 1) +
+  geom_point(color = "darkblue", size = 3) +
+  theme_minimal() +
+  theme(axis.title.y = element_text(size = 18, face = "bold", margin = margin(r = 10)),
+        axis.text.x = element_text(size = 14),
+        axis.text.y = element_text(size = 14)) + 
+  labs(title = "", x = "", y = "Average pseudotime")
+ggsave(filename = "Pseudotime_vs_patterns.pdf", 
+       plot = p, 
+       device = "pdf", 
+       width = 10,
+       height = 6,
+       useDingbats = FALSE)
+```
