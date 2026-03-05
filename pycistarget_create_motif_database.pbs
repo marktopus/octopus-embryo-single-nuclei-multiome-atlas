@@ -1,0 +1,68 @@
+#!/bin/bash -l
+#SBATCH --nodes=1
+#SBATCH --gpus-per-node=1
+#SBATCH --ntasks-per-node=16
+#SBATCH --time=00:30:00
+#SBATCH -A lp_seuntjens
+#SBATCH -p gpu_h100
+#SBATCH --job-name="IX_XII_create_database"
+#SBATCH --cluster=wice
+#SBATCH --mail-type=ALL
+#SBATCH --mail-user=mark.lassnig@kuleuven.be
+
+module purge
+set -e
+set -o pipefail
+# paths and parameters
+consensdir='/staging/leuven/stg_00171/Mark/IX_XII_MP_integration/pycistopic/consensus_peak_calling/'
+outdir='/staging/leuven/stg_00171/Mark/IX_XII_MP_integration/pycistarget/database_out/'
+tag=IX_XII
+genomefa='/staging/leuven/stg_00171/new_genome/xcOctVulg1.1_MT.fa'
+ncpu=36
+
+if [ ! -d $outdir ]
+then
+    mkdir -p $outdir
+fi
+# list of motifs
+motif_dir='/staging/leuven/stg_00171/Mark/10X_multiome_old_files/pycistarget/database/cluster-buster/motifs/v10nr_clust_public/singletons/'
+motif_list='/staging/leuven/stg_00171/Mark/10X_multiome_old_files/pycistarget/database/cluster-buster/motifs/v10nr_clust_public/motifs.tsv'
+#### Get fasta sequences
+echo "Extracting FASTA ..." 
+
+module load BEDTools
+bedtools getfasta -fi $genomefa -bed $consensdir/consensus_regions.bed > $consensdir/consensus_regions.fa #
+echo "Done." #
+###################
+echo "Creating DB files ..." 
+#### Activate environment
+source  /data/leuven/347/vsc34794/miniconda3/etc/profile.d/conda.sh
+conda activate create_cistarget_databases
+#### Set ${create_cistarget_databases_dir} to https://github.com/aertslab/create_cisTarget_databases
+create_cistarget_databases_dir='/staging/leuven/stg_00171/Mark/IX_XII_MP_integration/pycistarget/database_out/create_cisTarget_databases/'
+### Score the motifs in 5 chunks; we will use the non-redundant db here
+for current_part in {1..1} ; do
+     ${create_cistarget_databases_dir}/create_cistarget_motif_databases.py \
+        -f $consensdir/consensus_regions.fa \
+        -M $motif_dir \
+        -m $motif_list \
+         -p ${current_part} 1 \
+         -o $outdir/$tag \
+         -t 35 \
+         -l
+done 
+echo "Done." 
+echo "Merging files and cleanup ..."
+#### Merge scores
+${create_cistarget_databases_dir}/combine_partial_motifs_or_tracks_vs_regions_or_genes_scores_cistarget_dbs.py \
+    -i /staging/leuven/stg_00171/Mark/IX_XII_MP_integration/pycistarget/database_out/$tag \
+    -o /staging/leuven/stg_00171/Mark/IX_XII_MP_integration/
+#### Remove chunks
+rm $outdir/${tag}*part*
+echo "Done."
+echo "Creating ranking ..."
+#### Create rankings
+${create_cistarget_databases_dir}/convert_motifs_or_tracks_vs_regions_or_genes_scores_to_rankings_cistarget_dbs.py -i $outdir/$tag.motifs_vs_regions.scores.feather -s 555
+echo "Done."
+echo "ALL DONE."
+~                          
